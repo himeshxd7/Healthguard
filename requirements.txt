@@ -1,0 +1,13 @@
+pandas
+numpy
+scikit-learn
+tensorflow
+shap
+groq
+supabase
+streamlit
+ucimlrepo
+matplotlib
+seaborn
+python-dotenv
+joblib
