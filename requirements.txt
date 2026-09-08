@@ -11,3 +11,4 @@ matplotlib
 seaborn
 python-dotenv
 joblib
+plotly

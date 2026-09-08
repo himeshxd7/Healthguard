@@ -19,15 +19,17 @@ def generate_explanation(risk_score, top_factors_dict, inputs_dict):
         prompt = f"""
         You are a helpful AI health assistant analyzing a heart disease risk prediction from a machine learning model.
 
-        PATIENT INPUTS:
+        PATIENT INPUTS & LIFESTYLE:
         - Age: {inputs_dict.get('age')}
         - Sex: {inputs_dict.get('sex')}
         - Cholesterol: {inputs_dict.get('chol')}
         - Max Heart Rate: {inputs_dict.get('thalach')}
         - Resting BP: {inputs_dict.get('trestbps')}
+        - Smoking: {inputs_dict.get('smoking')} ({inputs_dict.get('cigarettes_per_day')} cigarettes/day)
+        - Alcohol Consumption: {inputs_dict.get('alcohol')} (Frequency: {inputs_dict.get('alcohol_freq')})
 
         MODEL OUTPUT:
-        The Artificial Neural Network model predicted a risk probability score of {risk_score:.2%} for heart disease.
+        The machine learning model predicted a risk probability score of {risk_score:.2%} for heart disease.
 
         TOP CONTRIBUTING FACTORS (SHAP Analysis):
         The following factors had the most impact on this specific prediction (positive value = increases risk, negative = decreases risk):
@@ -41,7 +43,7 @@ def generate_explanation(risk_score, top_factors_dict, inputs_dict):
         INSTRUCTIONS:
         1. Explain what this risk score means in simple terms.
         2. Explain how the top contributing factors influenced the model's decision based on the SHAP values provided.
-        3. Provide 3-4 general, non-prescriptive lifestyle suggestions (e.g., diet, exercise, stress management).
+        3. Provide 3-4 general, non-prescriptive lifestyle suggestions. Make sure to tailor these specifically based on the provided lifestyle inputs (Smoking and Alcohol frequency).
         4. Conclude with a clear disclaimer that you are an AI, not a doctor, and this is NOT a diagnostic tool.
 
         Keep the explanation compassionate, clear, and easy to read. Use markdown formatting.
@@ -49,7 +51,7 @@ def generate_explanation(risk_score, top_factors_dict, inputs_dict):
 
         response = client.chat.completions.create(
             messages=[{"role": "user", "content": prompt}],
-            model="llama-3.3-70b-versatile",
+            model="qwen/qwen3.8-27b",
             temperature=0.5,
             max_tokens=1024
         )

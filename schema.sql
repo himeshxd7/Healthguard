@@ -12,6 +12,18 @@ create table predictions (
     max_heart_rate int,
     exercise_angina boolean,
     oldpeak float,
+    smoking text,
+    cigarettes_per_day int,
+    alcohol text,
+    alcohol_freq text,
+    anaemia boolean,
+    creatinine_phosphokinase float,
+    diabetes boolean,
+    ejection_fraction float,
+    high_blood_pressure boolean,
+    platelets float,
+    serum_creatinine float,
+    serum_sodium float,
     risk_score float,
     top_factors text,       -- SHAP output, stored as JSON string
     explanation text        -- Groq-generated explanation
