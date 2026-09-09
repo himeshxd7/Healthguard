@@ -336,7 +336,7 @@ Keep the tone: warm, medically credible, specific, and empowering. Use simple la
         client = Groq(api_key=api_key)
         response = client.chat.completions.create(
             messages=[{"role": "user", "content": prompt}],
-            model="llama-3.3-70b-versatile",
+            model="llama-3.1-70b-versatile",
             temperature=0.4,
             max_tokens=2048,
         )
