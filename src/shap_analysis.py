@@ -1,89 +1,144 @@
 import os
 import numpy as np
-import tensorflow as tf
 import shap
 import joblib
 import matplotlib.pyplot as plt
 
 
 def run_shap_analysis():
-    models_dir = os.path.join(
-        os.path.dirname(
-            os.path.dirname(__file__)),
-        'models')
-    charts_dir = os.path.join(
-        os.path.dirname(
-            os.path.dirname(__file__)),
-        'charts')
+    base_dir = os.path.dirname(os.path.dirname(__file__))
+    models_dir = os.path.join(base_dir, 'models')
+    charts_dir = os.path.join(base_dir, 'charts')
     os.makedirs(charts_dir, exist_ok=True)
 
-    # Load model and data
-    model_path = os.path.join(models_dir, 'heart_disease_model.keras')
-    data_path = os.path.join(models_dir, 'data_splits.npz')
-    preprocessor_path = os.path.join(models_dir, 'preprocessor.joblib')
+    model_path      = os.path.join(models_dir, 'heart_disease_model.joblib')
+    data_path       = os.path.join(models_dir, 'data_splits.npz')
+    feat_names_path = os.path.join(models_dir, 'feature_names.joblib')
 
-    if not os.path.exists(model_path) or not os.path.exists(data_path):
-        print("Model or data not found. Please run train_ann.py first.")
-        return
+    for path, name in [(model_path, 'Model'), (data_path, 'Data splits'), (feat_names_path, 'Feature names')]:
+        if not os.path.exists(path):
+            print(f"  {name} not found at {path}. Please run data_prep.py and train_hgb.py first.")
+            return
 
-    model = tf.keras.models.load_model(model_path)
-    data = np.load(data_path)
-    preprocessor = joblib.load(preprocessor_path)
+    print("Loading model and data...")
+    model        = joblib.load(model_path)
+    feature_names = joblib.load(feat_names_path)
+    data         = np.load(data_path, allow_pickle=True)
+    X_test       = data['X_test']
+    X_train_val  = data['X_train_val']
 
-    X_train = data['X_train']
-    X_test = data['X_test']
+    print(f"  Model type: {type(model).__name__}")
+    print(f"  Features:   {feature_names}")
+    print(f"  Test samples: {len(X_test)}")
 
-    print("Generating SHAP values (this might take a moment)...")
+    # -------------------------------------------------------------------------
+    # SHAP EXPLAINER
+    # The production model is a CalibratedClassifierCV wrapping a
+    # HistGradientBoostingClassifier. We extract the underlying HGB estimator
+    # from the first calibrated classifier and use TreeExplainer on it.
+    # TreeExplainer is fast and exact for tree-based models.
+    # -------------------------------------------------------------------------
+    print("\nExtracting base tree model for TreeExplainer...")
+    try:
+        # CalibratedClassifierCV wraps calibrated estimators.
+        # In sklearn 1.6+ with FrozenEstimator, the chain is:
+        # CalibratedClassifierCV -> calibrated_classifiers_[0] -> estimator (FrozenEstimator) -> estimator (HGB)
+        raw_estimator = model.calibrated_classifiers_[0].estimator
+        # Unwrap FrozenEstimator if present
+        if hasattr(raw_estimator, 'estimator'):
+            raw_estimator = raw_estimator.estimator
+        print(f"  Base estimator: {type(raw_estimator).__name__}")
+        explainer = shap.TreeExplainer(raw_estimator)
+        explainer_type = "TreeExplainer"
+    except (AttributeError, IndexError, Exception) as e:
+        # Fallback: if model structure is different, use KernelExplainer
+        print("  Falling back to KernelExplainer (slower but model-agnostic)...")
+        background = X_train_val[np.random.choice(X_train_val.shape[0], 100, replace=False)]
+        explainer = shap.KernelExplainer(model.predict_proba, background)
+        explainer_type = "KernelExplainer"
 
-    # Keras models can use DeepExplainer or KernelExplainer.
-    # DeepExplainer is often faster for neural networks.
-    # We use a background dataset (subset of train) to integrate over
-    background = X_train[np.random.choice(
-        X_train.shape[0], 100, replace=False)]
+    print(f"  Using: {explainer_type}")
 
-    # Adjust for CNN if needed
-    if len(model.input_shape) == 3:
-        background = np.expand_dims(background, axis=-1)
-        X_test = np.expand_dims(X_test, axis=-1)
+    # -------------------------------------------------------------------------
+    # COMPUTE SHAP VALUES
+    # -------------------------------------------------------------------------
+    print("\nGenerating SHAP values for test set (this may take a moment)...")
 
-    explainer = shap.DeepExplainer(model, background)
+    # For large test sets, sample 200 rows for the summary plot
+    n_samples = min(200, len(X_test))
+    idx = np.random.choice(len(X_test), n_samples, replace=False)
+    X_sample = X_test[idx]
 
-    # Calculate SHAP values for the test set
-    shap_values = explainer.shap_values(X_test)
+    shap_values = explainer.shap_values(X_sample)
 
-    # SHAP values shape may be a list of arrays for Keras models.
-    # We take the first element if it is a list (binary classification)
+    # Handle list output (binary classification with some explainers)
     if isinstance(shap_values, list):
-        shap_values = shap_values[0]
+        shap_values = shap_values[1]  # positive class
 
-    # Flatten if 3D
-    if len(shap_values.shape) > 2:
-        shap_values = shap_values.reshape(shap_values.shape[0], -1)
-        X_test = X_test.reshape(X_test.shape[0], -1)
+    print(f"  SHAP values shape: {shap_values.shape}")
 
-    # Get feature names from the preprocessor
-    # The preprocessor is a ColumnTransformer
-    feature_names = []
-    # numeric features
-    numeric_features = ['age', 'trestbps', 'chol', 'thalach', 'oldpeak', 'ca']
-    feature_names.extend(numeric_features)
-    # categorical features (OneHotEncoded)
-    cat_encoder = preprocessor.transformers_[1][1].named_steps['encoder']
-    cat_feature_names = cat_encoder.get_feature_names_out()
-    feature_names.extend(cat_feature_names)
+    # -------------------------------------------------------------------------
+    # HUMAN-READABLE FEATURE NAMES
+    # -------------------------------------------------------------------------
+    readable_names = {
+        'age':      'Age',
+        'sex':      'Sex (Male)',
+        'cp':       'Chest Pain Type',
+        'trestbps': 'Resting Blood Pressure',
+        'chol':     'Cholesterol',
+        'fbs':      'Fasting Blood Sugar >120',
+        'restecg':  'Resting ECG Result',
+        'thalach':  'Max Heart Rate Achieved',
+        'exang':    'Exercise-Induced Angina',
+        'oldpeak':  'ST Depression (Exercise)',
+        'slope':    'ST Segment Slope',
+        'ca':       'Major Vessels Blocked',
+        'thal':     'Thalassemia',
+    }
+    display_names = [readable_names.get(f, f) for f in feature_names]
 
-    # Create a summary plot and save it
-    plt.figure()
+    # -------------------------------------------------------------------------
+    # SUMMARY PLOT — Global feature importance
+    # -------------------------------------------------------------------------
+    print("\nGenerating global SHAP summary plot...")
+    plt.figure(figsize=(10, 7))
     shap.summary_plot(
         shap_values,
-        X_test,
-        feature_names=feature_names,
-        show=False)
+        X_sample,
+        feature_names=display_names,
+        show=False,
+        max_display=13
+    )
+    plt.title("Global Feature Importance (SHAP)", fontsize=14, pad=15)
     plt.tight_layout()
-    plt.savefig(os.path.join(charts_dir, 'shap_summary_plot.png'))
+    summary_path = os.path.join(charts_dir, 'shap_summary_plot.png')
+    plt.savefig(summary_path, dpi=150, bbox_inches='tight')
     plt.close()
+    print(f"  Summary plot saved to {summary_path}")
 
-    print("SHAP analysis complete. Summary plot saved to charts/shap_summary_plot.png.")
+    # -------------------------------------------------------------------------
+    # BAR PLOT — Mean absolute SHAP values (feature ranking)
+    # -------------------------------------------------------------------------
+    print("Generating feature importance bar chart...")
+    mean_abs_shap = np.abs(shap_values).mean(axis=0)
+    sorted_idx = np.argsort(mean_abs_shap)[::-1]
+
+    plt.figure(figsize=(10, 6))
+    bars = plt.barh(
+        [display_names[i] for i in reversed(sorted_idx)],
+        mean_abs_shap[sorted_idx[::-1]],
+        color='#2196F3'
+    )
+    plt.xlabel('Mean |SHAP Value| (Average Impact on Risk Score)')
+    plt.title('Feature Importance — HealthGuard AI Model', fontsize=13)
+    plt.tight_layout()
+    bar_path = os.path.join(charts_dir, 'shap_feature_importance.png')
+    plt.savefig(bar_path, dpi=150, bbox_inches='tight')
+    plt.close()
+    print(f"  Feature importance chart saved to {bar_path}")
+
+    print("\nSHAP analysis complete!")
+    print("Next step: streamlit run app.py")
 
 
 if __name__ == "__main__":
