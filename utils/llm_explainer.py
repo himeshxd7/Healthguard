@@ -1,6 +1,6 @@
 import os
 import streamlit as st
-from groq import Groq
+import google.generativeai as genai
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -145,10 +145,12 @@ def _build_test_recommendations(inputs_dict: dict, risk_score: float) -> list[st
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def generate_explanation(risk_score, top_factors_dict, inputs_dict):
-    api_key = os.getenv("GROQ_API_KEY")
+    api_key = os.getenv("GEMINI_API_KEY")
 
     if not api_key or api_key == "your_key_here":
-        return "⚠️ Groq API key not configured. Please set GROQ_API_KEY in your .env file."
+        return "⚠️ Gemini API key not configured. Please set GEMINI_API_KEY in your .env file."
+    
+    genai.configure(api_key=api_key)
 
     # ── Build test recommendations ────────────────────────────────────────────
     recommended_test_keys = _build_test_recommendations(inputs_dict, risk_score)
@@ -333,13 +335,14 @@ Keep the tone: warm, medically credible, specific, and empowering. Use simple la
 """
 
     try:
-        client = Groq(api_key=api_key)
-        response = client.chat.completions.create(
-            messages=[{"role": "user", "content": prompt}],
-            model="llama-3.1-70b-versatile",
-            temperature=0.4,
-            max_tokens=2048,
+        model = genai.GenerativeModel('gemini-2.5-flash')
+        response = model.generate_content(
+            prompt,
+            generation_config=genai.types.GenerationConfig(
+                temperature=0.4,
+                max_output_tokens=8192,
+            )
         )
-        return response.choices[0].message.content
+        return response.text
     except Exception as e:
-        return f"⚠️ Error connecting to Groq AI: {str(e)}\n\nPlease check your GROQ_API_KEY in .env"
+        return f"⚠️ Error connecting to Gemini API: {str(e)}\n\nPlease check your GEMINI_API_KEY in .env"

@@ -2,7 +2,7 @@ import os
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense, Dropout, Input, Conv1D, MaxPooling1D, Flatten
+from tensorflow.keras.layers import Dense, Dropout, Input
 from sklearn.metrics import accuracy_score, roc_auc_score, f1_score
 import matplotlib.pyplot as plt
 
@@ -28,19 +28,6 @@ def build_deeper_mlp(input_dim):
     return model
 
 
-def build_cnn(input_dim):
-    # Reshape input for CNN: (batch_size, input_dim, 1)
-    model = Sequential([
-        Input(shape=(input_dim, 1)),
-        Conv1D(filters=16, kernel_size=3, activation='relu', padding='same'),
-        MaxPooling1D(pool_size=2),
-        Conv1D(filters=32, kernel_size=3, activation='relu', padding='same'),
-        MaxPooling1D(pool_size=2),
-        Flatten(),
-        Dense(16, activation='relu'),
-        Dense(1, activation='sigmoid')
-    ])
-    return model
 
 
 def plot_loss_curves(train_losses, val_losses, title, save_path):
@@ -180,28 +167,12 @@ def train_ann():
             charts_dir,
             'deeper_mlp_loss.png'))
 
-    print("\n--- Training CNN (Custom Loop) ---")
-    # Reshape for CNN
-    X_train_cnn = np.expand_dims(X_train, axis=-1)
-    X_val_cnn = np.expand_dims(X_val, axis=-1)
-    X_test_cnn = np.expand_dims(X_test, axis=-1)
 
-    cnn_model = build_cnn(input_dim)
-    t_loss_cnn, v_loss_cnn = custom_training_loop(
-        cnn_model, X_train_cnn, y_train, X_val_cnn, y_val, epochs=100)
-    plot_loss_curves(
-        t_loss_cnn,
-        v_loss_cnn,
-        "CNN Loss",
-        os.path.join(
-            charts_dir,
-            'cnn_loss.png'))
 
     # Compare validation losses and save the best model
     val_losses = {
         'Baseline MLP': min(v_loss),
-        'Deeper MLP': min(v_loss_deep),
-        'CNN': min(v_loss_cnn)
+        'Deeper MLP': min(v_loss_deep)
     }
 
     best_model_name = min(val_losses, key=val_losses.get)
@@ -216,10 +187,6 @@ def train_ann():
         best_model = deeper_model
         best_model.save(model_save_path)
         X_test_eval = X_test
-    else:
-        best_model = cnn_model
-        best_model.save(model_save_path)
-        X_test_eval = X_test_cnn
 
     preds_prob = best_model.predict(X_test_eval, verbose=0).flatten()
     preds_classes = (preds_prob > 0.5).astype(int)

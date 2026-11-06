@@ -3,7 +3,7 @@ numpy
 scikit-learn
 imbalanced-learn
 shap
-groq
+google-generativeai
 supabase
 streamlit
 ucimlrepo
@@ -12,3 +12,4 @@ seaborn
 python-dotenv
 joblib
 plotly
+fpdf2

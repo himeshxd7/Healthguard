@@ -9,6 +9,7 @@ import plotly.graph_objects as go
 from utils.llm_explainer import generate_explanation
 from utils.db import insert_prediction, get_user_history
 from utils.risk_rules import apply_clinical_rules
+from utils.pdf_generator import generate_pdf_report
 import uuid
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -26,63 +27,63 @@ st.set_page_config(
 # ─────────────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
 
 html, body, [class*="css"] {
-    font-family: 'Inter', sans-serif;
+    font-family: 'Outfit', sans-serif;
 }
 
-/* Main background */
+/* Vibrant modern background */
 .stApp {
-    background: linear-gradient(135deg, #0f0c29 0%, #1a1a2e 50%, #16213e 100%);
+    background: linear-gradient(135deg, #09090b 0%, #171720 50%, #1e1b4b 100%);
     color: #e2e8f0;
 }
 
-/* Top header card */
+/* Premium glassmorphic header card */
 .header-card {
-    background: linear-gradient(135deg, #1e3a5f 0%, #0f2444 100%);
-    border: 1px solid rgba(99, 179, 237, 0.3);
-    border-radius: 16px;
-    padding: 24px 32px;
-    margin-bottom: 24px;
-    box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+    background: rgba(30, 58, 138, 0.15);
+    border: 1px solid rgba(147, 197, 253, 0.2);
+    border-radius: 20px;
+    padding: 30px 40px;
+    margin-bottom: 28px;
+    box-shadow: 0 10px 40px -10px rgba(0,0,0,0.5);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
 }
 
-/* Form section cards */
+/* Glassmorphic form cards */
 .form-card {
-    background: rgba(255,255,255,0.04);
+    background: rgba(255,255,255,0.03);
     border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 12px;
-    padding: 20px 24px;
-    margin-bottom: 16px;
-    backdrop-filter: blur(10px);
+    border-radius: 16px;
+    padding: 24px 28px;
+    margin-bottom: 20px;
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    box-shadow: 0 4px 24px -5px rgba(0,0,0,0.3);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.form-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 32px -5px rgba(0,0,0,0.4);
 }
 
-/* Risk level cards */
-.risk-low    { background: linear-gradient(135deg, #065f46, #047857); border: 1px solid #10b981; border-radius: 12px; padding: 20px; }
-.risk-mod    { background: linear-gradient(135deg, #78350f, #92400e); border: 1px solid #f59e0b; border-radius: 12px; padding: 20px; }
-.risk-high   { background: linear-gradient(135deg, #7f1d1d, #991b1b); border: 1px solid #ef4444; border-radius: 12px; padding: 20px; }
-
-/* Test recommendation cards */
-.test-card {
-    background: rgba(255,255,255,0.05);
-    border: 1px solid rgba(99,179,237,0.25);
-    border-left: 4px solid #63b3ed;
-    border-radius: 8px;
-    padding: 16px;
-    margin-bottom: 12px;
-}
+/* Vibrant risk level cards */
+.risk-low    { background: linear-gradient(135deg, rgba(16,185,129,0.15), rgba(4,120,87,0.25)); border: 1px solid rgba(16,185,129,0.3); border-radius: 16px; padding: 24px; backdrop-filter: blur(10px); }
+.risk-mod    { background: linear-gradient(135deg, rgba(245,158,11,0.15), rgba(180,83,9,0.25)); border: 1px solid rgba(245,158,11,0.3); border-radius: 16px; padding: 24px; backdrop-filter: blur(10px); }
+.risk-high   { background: linear-gradient(135deg, rgba(239,68,68,0.15), rgba(185,28,28,0.25)); border: 1px solid rgba(239,68,68,0.3); border-radius: 16px; padding: 24px; backdrop-filter: blur(10px); }
 
 /* Progress bar styling */
 .step-indicator {
-    background: rgba(255,255,255,0.06);
+    background: rgba(59, 130, 246, 0.1);
     border-radius: 50px;
-    padding: 8px 16px;
+    padding: 10px 20px;
     display: inline-block;
-    font-size: 0.85rem;
-    color: #90cdf4;
-    margin-bottom: 12px;
-    border: 1px solid rgba(99,179,237,0.2);
+    font-size: 0.9rem;
+    color: #93c5fd;
+    margin-bottom: 16px;
+    border: 1px solid rgba(96, 165, 250, 0.3);
+    font-weight: 500;
 }
 
 /* Clinical note box */
@@ -107,22 +108,54 @@ html, body, [class*="css"] {
     color: #fca5a5;
 }
 
-/* Streamlit button overrides */
+/* Streamlit button overrides with animated gradient */
 .stButton > button {
-    background: linear-gradient(135deg, #2563eb, #1d4ed8);
+    background: linear-gradient(135deg, #3b82f6, #6366f1, #8b5cf6);
+    background-size: 200% auto;
     color: white;
     border: none;
-    border-radius: 8px;
-    padding: 10px 24px;
+    border-radius: 12px;
+    padding: 12px 28px;
     font-weight: 600;
-    font-size: 0.95rem;
-    transition: all 0.2s;
+    font-size: 1rem;
+    transition: all 0.3s cubic-bezier(.25,.8,.25,1);
     width: 100%;
+    box-shadow: 0 4px 15px -3px rgba(99, 102, 241, 0.4);
 }
 .stButton > button:hover {
-    background: linear-gradient(135deg, #1d4ed8, #1e40af);
-    box-shadow: 0 4px 15px rgba(37, 99, 235, 0.4);
-    transform: translateY(-1px);
+    background-position: right center;
+    box-shadow: 0 8px 25px -5px rgba(99, 102, 241, 0.6);
+    transform: translateY(-2px);
+    color: white !important;
+}
+
+/* Premium inputs */
+.stNumberInput input, .stSelectbox select, .stTextInput input {
+    background: rgba(255,255,255,0.04) !important;
+    border: 1px solid rgba(255,255,255,0.1) !important;
+    border-radius: 8px !important;
+    color: #f8fafc !important;
+    transition: all 0.2s ease;
+}
+.stNumberInput input:focus, .stSelectbox select:focus {
+    background: rgba(255,255,255,0.08) !important;
+    border-color: #60a5fa !important;
+    box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.2) !important;
+}
+
+.stDownloadButton > button {
+    background: linear-gradient(135deg, #10b981, #059669);
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    color: white;
+    font-weight: 600;
+    border-radius: 12px;
+    transition: all 0.3s ease;
+}
+.stDownloadButton > button:hover {
+    background: linear-gradient(135deg, #059669, #047857);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px -5px rgba(16, 185, 129, 0.4);
+    color: white !important;
 }
 
 /* Expander styling */
@@ -130,14 +163,6 @@ html, body, [class*="css"] {
     background: rgba(255,255,255,0.04) !important;
     border-radius: 8px !important;
     font-weight: 500 !important;
-}
-
-/* Number input / selectbox */
-.stNumberInput input, .stSelectbox select, .stTextInput input {
-    background: rgba(255,255,255,0.06) !important;
-    border: 1px solid rgba(255,255,255,0.12) !important;
-    border-radius: 6px !important;
-    color: #e2e8f0 !important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -1187,15 +1212,17 @@ if st.session_state.result_ready:
     st.markdown("---")
 
     # ── Print button ─────────────────────────────────────────────────────────
-    st.markdown("""
-    <button onclick="window.print()"
-        style="background: linear-gradient(135deg, #2d3748, #1a202c);
-               color: #a0aec0; border: 1px solid rgba(255,255,255,0.15);
-               border-radius: 8px; padding: 10px 20px; cursor: pointer;
-               font-size: 0.9rem; margin-top: 8px;">
-        🖨️ Print / Save as PDF
-    </button>
-    """, unsafe_allow_html=True)
+    st.markdown("### 📥 Save Your Results")
+    st.caption("Download a beautifully formatted PDF report of your assessment and AI recommendations.")
+    
+    pdf_bytes = generate_pdf_report(risk_score, explanation)
+    
+    st.download_button(
+        label="📄 Download PDF Report",
+        data=pdf_bytes,
+        file_name="HealthGuard_Assessment.pdf",
+        mime="application/pdf",
+    )
 
     # ── History ──────────────────────────────────────────────────────────────
     with st.expander("📋 View Previous Assessments"):
